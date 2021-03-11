@@ -1,0 +1,2 @@
+depthai==2.0.0.1
+openvino==2021.2
