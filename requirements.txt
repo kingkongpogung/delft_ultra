@@ -1,2 +1,2 @@
-depthai==2.0.0.1
-openvino==2021.2
+cmake==3.18.4.post1
+wheel==0.36.2
