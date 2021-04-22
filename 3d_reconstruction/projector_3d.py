@@ -2,10 +2,10 @@
 
 # Code copied from main depthai repo, depthai_helpers/projector_3d.py
 
-import numpy as np
 import open3d as o3d
 
-class PointCloudVisualizer():
+
+class PointCloudVisualizer:
     def __init__(self, intrinsic_matrix, width, height):
         self.depth_map = None
         self.rgb = None

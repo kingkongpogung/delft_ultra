@@ -18,22 +18,34 @@ Otherwise, depth output is U16 (mm) and median is functional.
 But like on Gen1, either depth or disparity has valid data. TODO enable both.
 '''
 
-class MAIN:
+
+class ThreeDPipeline:
     def __init__(self):
         self.point_cloud_enable = False
         self.source_camera = True
         self.out_depth = False  # Disparity by default
-        self.out_rectified = True  # Output and display rectified streams
+        self.out_rectified = True  # Output and display rectified streams, finding matching points between image
         self.lrcheck = True  # Better handling for occlusions
         self.extended = False  # Closer-in minimum depth, disparity range is doubled
         self.subpixel = True  # Better accuracy for longer distance, fractional disparity 32-levels
         self.median = dai.StereoDepthProperties.MedianFilter.KERNEL_7x7 #Options: MEDIAN_OFF, KERNEL_3x3, KERNEL_5x5, KERNEL_7x7
         self.right_intrinsic = [[860.0, 0.0, 640.0], [0.0, 860.0, 360.0], [0.0, 0.0, 1.0]]
         self.pcl_converter = None
+        self.xout_keys = ["xout_left",
+                          "xout_right",
+                          "xout_depth",
+                          "xout_disparity",
+                          "xout_rectif_left",
+                          "xout_rectif_right"]
 
+        self.pipeline = dai.Pipeline()
+        self.streams = ['left', 'right']
 
     def point_cloud(self):
-        "To create point cloud visualization"
+        """
+        To create point cloud visualization
+        :return: 
+        """""
         if self.out_rectified:
             try:
                 from projector_3d import PointCloudVisualizer
@@ -43,21 +55,41 @@ class MAIN:
         else:
             print("Disabling point-cloud visualizer, as out_rectified is not set")
 
-    def create_stereo_depth_pipeline(self, from_camera=True):
-        print("Creating Stereo Depth pipeline: ", end='')
-        if from_camera:
-            print("MONO CAMS -> STEREO -> XLINK OUT")
-        else:
-            print("XLINK IN -> STEREO -> XLINK OUT")
-        pipeline = dai.Pipeline()
-        stereo = pipeline.createStereoDepth()
-        xout_left = pipeline.createXLinkOut()
-        xout_right = pipeline.createXLinkOut()
-        xout_depth = pipeline.createXLinkOut()
-        xout_disparity = pipeline.createXLinkOut()
-        xout_rectif_left = pipeline.createXLinkOut()
-        xout_rectif_right = pipeline.createXLinkOut()
+    def create_xouts(self):
+        """
+        Create xout from camera to laptop
+        :return:
+        """
+        xouts = {}
+        for i in self.xout_keys:
+            xouts[i] = self.pipeline.createXLinkOut()
+        xouts = self.set_xouts_set_stream_name(xouts)
+        return xouts
 
+    def set_xouts_set_stream_name(self, xouts):
+        xouts["xout_left"].setStreamName("left")
+        xouts["xout_right"].setStreamName("right")
+        xouts["xout_depth"].setStreamName("depth")
+        xouts["xout_disparity"].setStreamName("disparity")
+        xouts["xout_rectif_left"].setStreamName("rectified_left")
+        xouts["xout_rectif_right"].setStreamName("rectified_right")
+        return xouts
+
+    def create_camera_left_and_right_pipeline(self):
+        cams = {}
+        for i in ["left", "right"]:
+            cams[i] = self.pipeline.createMonoCamera()
+            if i == "left":
+                cams[i].setBoardSocket(dai.CameraBoardSocket.LEFT)
+            else:
+                cams[i].setBoardSocket(dai.CameraBoardSocket.RIGHT)
+            cams[i].setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
+        return cams
+
+    def create_stereo_depth_pipeline(self):
+        print("Creating Stereo Depth pipeline: ", end='')
+        print("MONO CAMS -> STEREO -> XLINK OUT")
+        stereo = self.pipeline.createStereoDepth()
         stereo.setOutputDepth(self.out_depth)
         stereo.setOutputRectified(self.out_rectified)
         stereo.setConfidenceThreshold(200)
@@ -66,44 +98,16 @@ class MAIN:
         stereo.setLeftRightCheck(self.lrcheck)
         stereo.setExtendedDisparity(self.extended)
         stereo.setSubpixel(self.subpixel)
+        return stereo
 
-        if from_camera:
-            cam_left = pipeline.createMonoCamera()
-            cam_right = pipeline.createMonoCamera()
-            cam_left.setBoardSocket(dai.CameraBoardSocket.LEFT)
-            cam_right.setBoardSocket(dai.CameraBoardSocket.RIGHT)
-            for cam in [cam_left, cam_right]:  # Common config
-                cam.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
-                # cam.setFps(20.0)
-        else:
-            cam_left = pipeline.createXLinkIn()
-            cam_right = pipeline.createXLinkIn()
-            cam_left.setStreamName('in_left')
-            cam_right.setStreamName('in_right')
-            stereo.setEmptyCalibration()  # Set if the input frames are already rectified
-            stereo.setInputResolution(1280, 720)
-
-        xout_left.setStreamName('left')
-        xout_right.setStreamName('right')
-        xout_depth.setStreamName('depth')
-        xout_disparity.setStreamName('disparity')
-        xout_rectif_left.setStreamName('rectified_left')
-        xout_rectif_right.setStreamName('rectified_right')
-
-        cam_left.out.link(stereo.left)
-        cam_right.out.link(stereo.right)
-        stereo.syncedLeft.link(xout_left.input)
-        stereo.syncedRight.link(xout_right.input)
-        stereo.depth.link(xout_depth.input)
-        stereo.disparity.link(xout_disparity.input)
-        streams = ['left', 'right']
+    def create_stereo_link(self, cam_stereo, xouts): #TODO cari arti dari link
+        cam_stereo.syncedLeft.link(xouts["xout_left"].input)
+        cam_stereo.syncedRight.link(xouts["xout_right"].input)
+        cam_stereo.depth.link(xouts["xout_depth"].input)
+        cam_stereo.disparity.link(xouts["xout_disparity"].input)
         if self.out_rectified:
-            stereo.rectifiedLeft .link(xout_rectif_left.input)
-            stereo.rectifiedRight.link(xout_rectif_right.input)
-            streams.extend(['rectified_left', 'rectified_right'])
-        streams.extend(['disparity', 'depth'])
-
-        return pipeline, streams
+            cam_stereo.rectifiedLeft.link(xouts["xout_rectif_left"].input)
+            cam_stereo.rectifiedRight.link(xouts["xout_rectif_right"].input)
 
     # The operations done here seem very CPU-intensive, TODO
     def convert_to_cv2_frame(self, name, image):
@@ -113,9 +117,9 @@ class MAIN:
         max_disp = 96
         disp_type = np.uint8
         disp_levels = 1
-        if (self.extended):
+        if self.extended:
             max_disp *= 2
-        if (self.subpixel):
+        if self.subpixel:
             max_disp *= 32
             disp_type = np.uint16  # 5 bits fractional disparity
             disp_levels = 32
@@ -150,7 +154,7 @@ class MAIN:
                     pcl_converter.rgbd_to_projection(depth, frame_rgb, True)
                 else: # Option 2: project rectified right
                     self.pcl_converter.rgbd_to_projection(depth, last_rectif_right, False)
-                pcl_converter.visualize_pcd()
+                self.pcl_converter.visualize_pcd()
 
         else: # mono streams / single channel
             frame = np.array(data).reshape((h, w)).astype(np.uint8)
@@ -160,11 +164,23 @@ class MAIN:
                 last_rectif_right = frame
         return frame
 
-    def test_pipeline(self):
-        pipeline, streams = self.create_stereo_depth_pipeline(source_camera)
+    def create_pipeline(self):
+        cam_stereo = self.create_stereo_depth_pipeline()
+        cams = self.create_camera_left_and_right_pipeline()
+        cams["left"].out.link(cam_stereo.left)
+        cams["right"].out.link(cam_stereo.right)
+        xouts = self.create_xouts()
+        self.create_stereo_link(cam_stereo, xouts)
+
+        if self.out_rectified:
+            self.streams.extend(['rectified_left', 'rectified_right'])
+        self.streams.extend(['disparity', 'depth'])
 
         print("Creating DepthAI device")
-        with dai.Device(pipeline) as device:
+
+        "------- Lanjut Besok ------"
+
+        with dai.Device(self.pipeline) as device:
             print("Starting pipeline")
             device.startPipeline()
 
@@ -185,7 +201,7 @@ class MAIN:
 
             # Create a receive queue for each stream
             q_list = []
-            for s in streams:
+            for s in self.streams:
                 q = device.getOutputQueue(s, 8, blocking=False)
                 q_list.append(q)
 
@@ -233,9 +249,9 @@ class MAIN:
     def main(self):
         if self.point_cloud_enable:
             self.point_cloud()
-        self.test_pipeline()
+        self.create_pipeline()
 
 
 if __name__ == "__main__":
-    main = MAIN()
+    main = ThreeDPipeline()
     main.main()
