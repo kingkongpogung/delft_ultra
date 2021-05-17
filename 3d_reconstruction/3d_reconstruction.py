@@ -3,6 +3,8 @@
 import cv2
 import numpy as np
 import depthai as dai
+import datetime
+import os
 
 
 '''
@@ -18,6 +20,9 @@ But like on Gen1, either depth or disparity has valid data. TODO enable both.
 
 class ThreeDPipeline:
     def __init__(self):
+        self.project_root = os.getcwd();
+        self.path_depth = 'dataset\\depth\\' # Directory to save depth image
+        self.path_mono = 'dataset\\mono\\' # Directory to save rectified_right image
         self.point_cloud_enable = False
         self.source_camera = True
         self.out_depth = True  # Default
@@ -119,6 +124,7 @@ class ThreeDPipeline:
     # The operations done here seem very CPU-intensive, TODO
     def convert_to_cv2_frame(self, name, image):
         global last_rectif_right
+        global last_depth
 
         baseline = 75 #mm
         focal = self.right_intrinsic[0][0]
@@ -141,6 +147,7 @@ class ThreeDPipeline:
             frame = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_NV12)
         elif name == 'depth':
             frame = np.array(data).astype(np.uint8).view(np.uint16).reshape((h, w))
+            last_depth = frame
         elif name == 'disparity':
             disp = np.array(data).astype(np.uint8).view(disp_type).reshape((h, w))
             # Compute depth from disparity (32 levels)
@@ -177,6 +184,7 @@ class ThreeDPipeline:
             print("Starting pipeline")
             # device.startPipeline() # Depreciated for depthai 2.3.0.0
             while True:
+                stamp = self.get_time_stamp()
                 for stream in self.streams:
                     queue = device.getOutputQueue(stream, 8, blocking=False)
                     name = queue.getName()
@@ -184,6 +192,10 @@ class ThreeDPipeline:
                     if name not in self.skip_streams:
                         frame = self.convert_to_cv2_frame(name, image)
                         self.visualize_image(name, frame)
+
+                if self.is_write_img():
+                    self.write_image(last_depth, os.path.join(self.project_root, self.path_depth), stamp)
+                    self.write_image(last_rectif_right, os.path.join(self.project_root, self.path_mono), stamp)
 
                 if self.is_quit():
                     break
@@ -194,6 +206,18 @@ class ThreeDPipeline:
     def is_quit(self):
         if cv2.waitKey(1) == ord('q'):
             return True
+
+    def is_write_img(self):
+        if cv2.waitKey(1) == ord('s'):
+            return True
+
+    def write_image(self, frame, path, stamp):
+        filename = path + str(stamp) + '.png'
+        cv2.imwrite(filename, frame)
+        print('Save Image: ' + filename)
+
+    def get_time_stamp(self):
+        return int(datetime.datetime.now().timestamp())
 
     def main(self):
         if self.point_cloud_enable:
