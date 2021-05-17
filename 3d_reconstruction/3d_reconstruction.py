@@ -3,8 +3,6 @@
 import cv2
 import numpy as np
 import depthai as dai
-from time import sleep
-import datetime
 
 
 '''
@@ -18,19 +16,18 @@ Otherwise, depth output is U16 (mm) and median is functional.
 But like on Gen1, either depth or disparity has valid data. TODO enable both.
 '''
 
-
 class ThreeDPipeline:
     def __init__(self):
         self.point_cloud_enable = False
         self.source_camera = True
-        self.out_depth = False  # Disparity by default
+        self.out_depth = True  # Disparity by default
         self.out_rectified = True  # Output and display rectified streams, finding matching points between image
-        self.lrcheck = True  # Better handling for occlusions
-        self.extended = False  # Closer-in minimum depth, disparity range is doubled
-        self.subpixel = True  # Better accuracy for longer distance, fractional disparity 32-levels
+        self.lrcheck = False  # Better handling for occlusions
+        self.extended = False # Closer-in minimum depth, disparity range is doubled
+        self.subpixel = False  # Better accuracy for longer distance, fractional disparity 32-levels
         self.extend_disparity_range = True  # Optionally, extend disparity range to better visualize it
         self.apply_color_map = True  # Optionally apply color map
-        self.project_colorized_disparity = True   # Option 1: project colorized disparity
+        self.project_colorized_disparity = False   # Option 1: project colorized disparity
         self.median = dai.StereoDepthProperties.MedianFilter.KERNEL_7x7 #Options: MEDIAN_OFF, KERNEL_3x3, KERNEL_5x5, KERNEL_7x7
         self.right_intrinsic = [[860.0, 0.0, 640.0], [0.0, 860.0, 360.0], [0.0, 0.0, 1.0]]
         self.pcl_converter = None
@@ -40,11 +37,11 @@ class ThreeDPipeline:
                           "xout_disparity",
                           "xout_rectif_left",
                           "xout_rectif_right"]
-        self.skip_streams = ['left', 'right', 'depth'] # Skip some streams for now, to reduce CPU load
+        self.skip_streams = ['left', 'right', 'disparity', 'rectified_left'] # Skip some streams for now, to reduce CPU load
         self.pipeline = dai.Pipeline()
         self.streams = ['left', 'right']
-        self.image_height = 480 #720
-        self.image_width = 852 #1280
+        self.image_height = 400 #720
+        self.image_width = 640 #1280
 
     def point_cloud(self):
         """
@@ -56,7 +53,7 @@ class ThreeDPipeline:
                 from projector_3d import PointCloudVisualizer
             except ImportError as e:
                 raise ImportError(f"\033[1;5;31mError occured when importing PCL projector: {e}. Try disabling the point cloud \033[0m ")
-            self.pcl_converter = PointCloudVisualizer(self.right_intrinsic, 1280, 720)
+            self.pcl_converter = PointCloudVisualizer(self.right_intrinsic, 640, 400)
         else:
             print("Disabling point-cloud visualizer, as out_rectified is not set")
 
@@ -88,8 +85,8 @@ class ThreeDPipeline:
                 cams[i].setBoardSocket(dai.CameraBoardSocket.LEFT)
             else:
                 cams[i].setBoardSocket(dai.CameraBoardSocket.RIGHT)
-            if self.image_height == 480:
-                cams[i].setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
+            if self.image_height == 400:
+                cams[i].setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
             if self.image_height == 720:
                 cams[i].setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
         return cams
@@ -98,8 +95,8 @@ class ThreeDPipeline:
         print("Creating Stereo Depth pipeline: ", end='')
         print("MONO CAMS -> STEREO -> XLINK OUT")
         stereo = self.pipeline.createStereoDepth()
-        stereo.setOutputDepth(self.out_depth)
-        stereo.setOutputRectified(self.out_rectified)
+        # stereo.setOutputDepth(self.out_depth) # Depreciated for depthai 2.3.0.0
+        # stereo.setOutputRectified(self.out_rectified) # Depreciated for depthai 2.3.0.0
         stereo.setConfidenceThreshold(200)
         stereo.setRectifyEdgeFillColor(0)  # Black, to better see the cutout
         stereo.setMedianFilter(self.median)  # KERNEL_7x7 default
@@ -108,7 +105,10 @@ class ThreeDPipeline:
         stereo.setSubpixel(self.subpixel)
         return stereo
 
-    def create_stereo_link(self, cam_stereo, xouts): #TODO cari arti dari link
+    def create_stereo_link(self, cam_stereo, xouts):
+        """
+        Create link for stereo camera nodes
+        """
         cam_stereo.syncedLeft.link(xouts["xout_left"].input)
         cam_stereo.syncedRight.link(xouts["xout_right"].input)
         cam_stereo.depth.link(xouts["xout_depth"].input)
@@ -177,7 +177,7 @@ class ThreeDPipeline:
         print("Creating DepthAI device")
         with dai.Device(self.pipeline) as device:
             print("Starting pipeline")
-            device.startPipeline()
+            # device.startPipeline() # Depreciated for depthai 2.3.0.0
             while True:
                 for stream in self.streams:
                     queue = device.getOutputQueue(stream, 8, blocking=False)
