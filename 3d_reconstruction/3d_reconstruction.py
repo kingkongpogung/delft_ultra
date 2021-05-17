@@ -20,8 +20,8 @@ class ThreeDPipeline:
     def __init__(self):
         self.point_cloud_enable = False
         self.source_camera = True
-        self.out_depth = True  # Disparity by default
-        self.out_rectified = True  # Output and display rectified streams, finding matching points between image
+        self.out_depth = True  # Default
+        self.out_rectified = True  # Output and display rectified streams, finding matching points between image (Default)
         self.lrcheck = False  # Better handling for occlusions
         self.extended = False # Closer-in minimum depth, disparity range is doubled
         self.subpixel = False  # Better accuracy for longer distance, fractional disparity 32-levels
@@ -29,19 +29,19 @@ class ThreeDPipeline:
         self.apply_color_map = True  # Optionally apply color map
         self.project_colorized_disparity = False   # Option 1: project colorized disparity
         self.median = dai.StereoDepthProperties.MedianFilter.KERNEL_7x7 #Options: MEDIAN_OFF, KERNEL_3x3, KERNEL_5x5, KERNEL_7x7
-        self.right_intrinsic = [[860.0, 0.0, 640.0], [0.0, 860.0, 360.0], [0.0, 0.0, 1.0]]
         self.pcl_converter = None
+        self.right_intrinsic = [[860.0, 0.0, 640.0], [0.0, 860.0, 360.0], [0.0, 0.0, 1.0]]
         self.xout_keys = ["xout_left",
                           "xout_right",
                           "xout_depth",
                           "xout_disparity",
                           "xout_rectif_left",
                           "xout_rectif_right"]
-        self.skip_streams = ['left', 'right', 'disparity', 'rectified_left'] # Skip some streams for now, to reduce CPU load
+        self.streams = ['left', 'right', 'depth', 'disparity', 'rectified_left', 'rectified_right']
+        self.skip_streams = ['left', 'right', 'disparity', 'rectified_left']  # Skip some streams for now, to reduce CPU load
+        self.image_height = 400  # 720
+        self.image_width = 640  # 1280
         self.pipeline = dai.Pipeline()
-        self.streams = ['left', 'right']
-        self.image_height = 400 #720
-        self.image_width = 640 #1280
 
     def point_cloud(self):
         """
@@ -113,13 +113,13 @@ class ThreeDPipeline:
         cam_stereo.syncedRight.link(xouts["xout_right"].input)
         cam_stereo.depth.link(xouts["xout_depth"].input)
         cam_stereo.disparity.link(xouts["xout_disparity"].input)
-        if self.out_rectified:
-            cam_stereo.rectifiedLeft.link(xouts["xout_rectif_left"].input)
-            cam_stereo.rectifiedRight.link(xouts["xout_rectif_right"].input)
+        cam_stereo.rectifiedLeft.link(xouts["xout_rectif_left"].input)
+        cam_stereo.rectifiedRight.link(xouts["xout_rectif_right"].input)
 
     # The operations done here seem very CPU-intensive, TODO
     def convert_to_cv2_frame(self, name, image):
         global last_rectif_right
+
         baseline = 75 #mm
         focal = self.right_intrinsic[0][0]
         max_disp = 96
@@ -131,7 +131,9 @@ class ThreeDPipeline:
             max_disp *= 32
             disp_type = np.uint16  # 5 bits fractional disparity
             disp_levels = 32
+
         data, w, h = image.getData(), image.getWidth(), image.getHeight()
+
         if name == 'rgb_preview':
             frame = np.array(data).reshape((3, h, w)).transpose(1, 2, 0).astype(np.uint8)
         elif name == 'rgb_video': # YUV NV12
@@ -155,7 +157,6 @@ class ThreeDPipeline:
                 else: # Option 2: project rectified right
                     self.pcl_converter.rgbd_to_projection(depth, last_rectif_right, False)
                 self.pcl_converter.visualize_pcd()
-
         else: # mono streams / single channel
             frame = np.array(data).reshape((h, w)).astype(np.uint8)
             if name.startswith('rectified_'):
@@ -171,9 +172,6 @@ class ThreeDPipeline:
         cams["right"].out.link(cam_stereo.right)
         xouts = self.create_xouts()
         self.create_stereo_link(cam_stereo, xouts)
-        if self.out_rectified:
-            self.streams.extend(['rectified_left', 'rectified_right'])
-        self.streams.extend(['disparity', 'depth'])
         print("Creating DepthAI device")
         with dai.Device(self.pipeline) as device:
             print("Starting pipeline")
