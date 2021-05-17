@@ -165,6 +165,9 @@ class ThreeDPipeline:
                 last_rectif_right = frame
         return frame
 
+    def visualize_image(self, name, frame):
+        cv2.imshow(name, frame)
+
     def create_pipeline(self):
         cam_stereo = self.create_stereo_depth_pipeline()
         cams = self.create_camera_left_and_right_pipeline()
@@ -183,7 +186,7 @@ class ThreeDPipeline:
                     image = queue.get()
                     if name not in self.skip_streams:
                         frame = self.convert_to_cv2_frame(name, image)
-                        cv2.imshow(name, frame)
+                        self.visualize_image(name, frame)
                 if cv2.waitKey(1) == ord('q'):
                     break
 
