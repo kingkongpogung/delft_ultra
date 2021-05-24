@@ -20,14 +20,15 @@ But like on Gen1, either depth or disparity has valid data. TODO enable both.
 
 class ThreeDPipeline:
     def __init__(self):
-        self.project_root = os.getcwd();
+        self.project_root = os.getcwd()
         self.path_depth = 'dataset\\depth\\' # Directory to save depth image
         self.path_mono = 'dataset\\mono\\' # Directory to save rectified_right image
+        self.path_color = 'dataset\\color\\' # Directory to save color image
         self.point_cloud_enable = False
         self.source_camera = True
         self.out_depth = True  # Default
         self.out_rectified = True  # Output and display rectified streams, finding matching points between image (Default)
-        self.lrcheck = False  # Better handling for occlusions
+        self.lrcheck = True  # Better handling for occlusions and required for overlay color and depth image
         self.extended = False # Closer-in minimum depth, disparity range is doubled
         self.subpixel = False  # Better accuracy for longer distance, fractional disparity 32-levels
         self.extend_disparity_range = True  # Optionally, extend disparity range to better visualize it
@@ -41,11 +42,22 @@ class ThreeDPipeline:
                           "xout_depth",
                           "xout_disparity",
                           "xout_rectif_left",
-                          "xout_rectif_right"]
-        self.streams = ['left', 'right', 'depth', 'disparity', 'rectified_left', 'rectified_right']
-        self.skip_streams = ['left', 'right', 'disparity', 'rectified_left']  # Skip some streams for now, to reduce CPU load
-        self.image_height = 400  # 720
-        self.image_width = 640  # 1280
+                          "xout_rectif_right",
+                          "xout_rgb"]
+        self.streams = ['left', 'right', 'disparity', 'rectified_left', 'rectified_right', 'rgb']
+        self.skip_streams = ['left', 'right', 'rectified_left', 'rectified_right']  # Skip some streams for now, to reduce CPU load
+        # Use the following options to reduce the minimum distance (not work with depth-rgb align)
+        #self.image_height = 400  # 720
+        #self.image_width = 640  # 1280
+        # Use the following options to align depth-rgb
+        self.image_height = 720
+        self.image_width = 280
+
+
+        self.last_rectif_right = None
+        self.last_depth = None
+        self.last_rgb = None
+
         self.pipeline = dai.Pipeline()
 
     def point_cloud(self):
@@ -80,6 +92,7 @@ class ThreeDPipeline:
         xouts["xout_disparity"].setStreamName("disparity")
         xouts["xout_rectif_left"].setStreamName("rectified_left")
         xouts["xout_rectif_right"].setStreamName("rectified_right")
+        xouts["xout_rgb"].setStreamName("rgb")
         return xouts
 
     def create_camera_left_and_right_pipeline(self):
@@ -96,6 +109,15 @@ class ThreeDPipeline:
                 cams[i].setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
         return cams
 
+    def create_rgb_pipeline(self):
+        cam_rgb = self.pipeline.createColorCamera()
+        cam_rgb.setBoardSocket(dai.CameraBoardSocket.RGB)
+        cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+        # For now, RGB needs fixed focus to properly align with depth.
+        # This value was used during calibration
+        cam_rgb.initialControl.setManualFocus(130)
+        return cam_rgb
+
     def create_stereo_depth_pipeline(self):
         print("Creating Stereo Depth pipeline: ", end='')
         print("MONO CAMS -> STEREO -> XLINK OUT")
@@ -104,11 +126,18 @@ class ThreeDPipeline:
         # stereo.setOutputRectified(self.out_rectified) # Depreciated for depthai 2.3.0.0
         stereo.setConfidenceThreshold(200)
         stereo.setRectifyEdgeFillColor(0)  # Black, to better see the cutout
-        stereo.setMedianFilter(self.median)  # KERNEL_7x7 default
         stereo.setLeftRightCheck(self.lrcheck)
         stereo.setExtendedDisparity(self.extended)
         stereo.setSubpixel(self.subpixel)
+        if self.lrcheck or self.extended or self.subpixel:
+            self.median = dai.StereoDepthProperties.MedianFilter.MEDIAN_OFF  # TODO
+            stereo.setMedianFilter(self.median)
+        else:
+            print("false")
+            stereo.setMedianFilter(self.median)  # KERNEL_7x7 default
+        stereo.setDepthAlign(dai.CameraBoardSocket.RGB)
         return stereo
+
 
     def create_stereo_link(self, cam_stereo, xouts):
         """
@@ -116,16 +145,19 @@ class ThreeDPipeline:
         """
         cam_stereo.syncedLeft.link(xouts["xout_left"].input)
         cam_stereo.syncedRight.link(xouts["xout_right"].input)
-        cam_stereo.depth.link(xouts["xout_depth"].input)
+        #cam_stereo.depth.link(xouts["xout_depth"].input) # Cannot be used to align the depth-rgb, depth is calculated from disparity
         cam_stereo.disparity.link(xouts["xout_disparity"].input)
         cam_stereo.rectifiedLeft.link(xouts["xout_rectif_left"].input)
         cam_stereo.rectifiedRight.link(xouts["xout_rectif_right"].input)
 
+    def create_rgb_isp_link(self, cam_rgb, xouts):
+        """
+        Create link for rgb camera nodes
+        """
+        cam_rgb.isp.link(xouts["xout_rgb"].input)
+
     # The operations done here seem very CPU-intensive, TODO
     def convert_to_cv2_frame(self, name, image):
-        global last_rectif_right
-        global last_depth
-
         baseline = 75 #mm
         focal = self.right_intrinsic[0][0]
         max_disp = 96
@@ -140,23 +172,32 @@ class ThreeDPipeline:
 
         data, w, h = image.getData(), image.getWidth(), image.getHeight()
 
-        if name == 'rgb_preview':
-            frame = np.array(data).reshape((3, h, w)).transpose(1, 2, 0).astype(np.uint8)
+        if name == 'rgb':
+            frame = image.getCvFrame()
+            self.last_rgb = frame
+            #frame = np.array(data).reshape((3, h, w)).transpose(1, 2, 0).astype(np.uint8)
         elif name == 'rgb_video': # YUV NV12
             yuv = np.array(data).reshape((h * 3 // 2, w)).astype(np.uint8)
             frame = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_NV12)
         elif name == 'depth':
             frame = np.array(data).astype(np.uint8).view(np.uint16).reshape((h, w))
-            last_depth = frame
+            #self.last_depth = frame
+            # print(np.mean(last_depth))
+            if 1: frame = (frame * 255. / 96).astype(np.uint8)
+            # Optional, apply false colorization
+            if 1: frame= cv2.applyColorMap(frame, cv2.COLORMAP_HOT)
         elif name == 'disparity':
-            disp = np.array(data).astype(np.uint8).view(disp_type).reshape((h, w))
+            frame= np.array(data).astype(np.uint8).view(disp_type).reshape((h, w))
             # Compute depth from disparity (32 levels)
             with np.errstate(divide='ignore'): # Should be safe to ignore div by zero here
-                depth = (disp_levels * baseline * focal / disp).astype(np.uint16)
+                depth = (disp_levels * baseline * focal / frame).astype(np.uint16)
+                self.last_depth = depth
+                #print(last_depth)
             if self.extend_disparity_range:
-                frame = (disp * 255. / max_disp).astype(np.uint8)
+                frame = (frame * 255. / max_disp).astype(np.uint8)
             if self.apply_color_map:
                 frame = cv2.applyColorMap(frame, cv2.COLORMAP_HOT)
+            self.last_depth = frame
             if self.pcl_converter is not None:
                 if self.project_colorized_disparity:
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -173,16 +214,28 @@ class ThreeDPipeline:
         return frame
 
     def create_pipeline(self):
+        xouts = self.create_xouts()
+
+        cam_rgb = self.create_rgb_pipeline()
+        self.create_rgb_isp_link(cam_rgb, xouts)
+
         cam_stereo = self.create_stereo_depth_pipeline()
         cams = self.create_camera_left_and_right_pipeline()
+
+
         cams["left"].out.link(cam_stereo.left)
         cams["right"].out.link(cam_stereo.right)
-        xouts = self.create_xouts()
+
         self.create_stereo_link(cam_stereo, xouts)
+
+
         print("Creating DepthAI device")
         with dai.Device(self.pipeline) as device:
             print("Starting pipeline")
             # device.startPipeline() # Depreciated for depthai 2.3.0.0
+            self.last_rgb = None
+            self.last_depth = None
+
             while True:
                 stamp = self.get_time_stamp()
                 for stream in self.streams:
@@ -192,6 +245,14 @@ class ThreeDPipeline:
                     if name not in self.skip_streams:
                         frame = self.convert_to_cv2_frame(name, image)
                         self.visualize_image(name, frame)
+
+                    if self.last_rgb is not None and self.last_depth is not None:
+                        blended = cv2.addWeighted(self.last_rgb, 0.6, self.last_depth, 0.4 ,0)
+                        self.visualize_image("rgb-depth", blended)
+                        self.last_rgb = None
+                        self.last_depth = None
+
+
 
                 if self.is_write_img():
                     self.write_image(last_depth, os.path.join(self.project_root, self.path_depth), stamp)
