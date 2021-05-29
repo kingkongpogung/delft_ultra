@@ -187,11 +187,12 @@ class ThreeDPipeline:
             # Optional, apply false colorization
             if 1: frame= cv2.applyColorMap(frame, cv2.COLORMAP_HOT)
         elif name == 'disparity':
-            frame= np.array(data).astype(np.uint8).view(disp_type).reshape((h, w))
+            #frame= np.array(data).astype(np.uint8).view(disp_type).reshape((h, w))
+            frame = image.getFrame()
             # Compute depth from disparity (32 levels)
             with np.errstate(divide='ignore'): # Should be safe to ignore div by zero here
                 depth = (disp_levels * baseline * focal / frame).astype(np.uint16)
-                self.last_depth = depth
+                #self.last_depth = depth
                 #print(last_depth)
             if self.extend_disparity_range:
                 frame = (frame * 255. / max_disp).astype(np.uint8)
