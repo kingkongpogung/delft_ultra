@@ -56,8 +56,29 @@ def is_perpendicular(depth_frame):
     else:
         return False
 
+def create_box(depth_frame):
+    color = (255, 0, 0)
+    thickness = 2
+    w = 50
+
+    x1 = int(depth_frame.shape[1] / 5)
+    y1 = int(depth_frame.shape[0]/ 5)
+    x2 = 4 * x1
+    y2 = 4 * y1
+
+    depth_frame = cv2.rectangle(depth_frame, (x1,y1), (x2,y2), color, thickness)
+
+    depth_frame = cv2.rectangle(depth_frame, (x1,y1), (x1+w,y1+w), color, thickness)
+    depth_frame = cv2.rectangle(depth_frame, (x2,y2), (x2-w,y2-w), color, thickness)
+
+    depth_frame = cv2.rectangle(depth_frame, (x2,y1), (x2-w,y1+w), color, thickness)
+    depth_frame = cv2.rectangle(depth_frame, (x1,y2), (x1+w,y2-w), color, thickness)
+
+    return depth_frame
+
 ## parameter
-img_width, img_height = [720, 480]
+#img_width, img_height = [720, 480]
+img_width, img_height = [1280, 1080]
 
 # depth paramter
 right_intrinsic = [[860.0, 0.0, 640.0], [0.0, 860.0, 360.0], [0.0, 0.0, 1.0]]
@@ -76,16 +97,23 @@ pipeline = dai.Pipeline()
 
 #create color camera and its node
 cam = pipeline.createColorCamera()
-cam.setPreviewSize(img_width,img_height)
-cam.setInterleaved(False)
-cam.setPreviewKeepAspectRatio(True)
-cam.setFps(40)
+cam.setBoardSocket(dai.CameraBoardSocket.RGB)
+cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+# For now, RGB needs fixed focus to properly align with depth.
+# This value was used during calibration
+cam.initialControl.setManualFocus(130)
+
+#cam.setPreviewSize(img_width,img_height)
+#cam.setInterleaved(False)
+#cam.setPreviewKeepAspectRatio(True)
+#cam.setFps(40)
 
 xouts = {}
 xouts["rgb"] = pipeline.createXLinkOut()
 xouts["rgb"] .setStreamName("rgb")
 xouts["rgb"] .input.setBlocking(False) # why we need this?
-cam.preview.link(xouts["rgb"] .input)
+cam.isp.link(xouts["rgb"].input)
+#cam.preview.link(xouts["rgb"] .input)
 
 
 #create camera left and right
@@ -96,7 +124,7 @@ for i in ["left", "right"]:
         cams[i].setBoardSocket(dai.CameraBoardSocket.LEFT)
     else:
         cams[i].setBoardSocket(dai.CameraBoardSocket.RIGHT)
-    cams[i].setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+    #cams[i].setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
     cams[i].setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
 
 
@@ -132,7 +160,7 @@ xouts["disparity"].setStreamName("disparity")
 stereo.disparity.link(xouts["disparity"].input)
 
 device = dai.Device(pipeline)
-device.startPipeline()
+#device.startPipeline()
 
 q_frame = device.getOutputQueue("rgb", maxSize=4, blocking=False)
 d_frame = device.getOutputQueue("disparity", maxSize=8, blocking=False) # alfian uses 8. why?
@@ -163,6 +191,7 @@ while True:
         with np.errstate(divide='ignore'):  # Should be safe to ignore div by zero here
             depth = (disp_levels * baseline * focal / disparity).astype(np.uint16)
             colored_depth = display_colored_depth(depth)
+            colored_depth = create_box(colored_depth)
 
 
     if frame is not None:
@@ -196,7 +225,7 @@ while True:
         resized_mask = cv2.resize(mask, (depth.shape[1],depth.shape[0]), interpolation = cv2.INTER_AREA)
         depth_masked = cv2.bitwise_and(depth, depth, mask=resized_mask)
         depth_result = cv2.bitwise_and(colored_depth, colored_depth, mask=resized_mask)
-        #cv2.imshow("depth", depth_result)
+
         binary_mask = np.copy(resized_mask)
         binary_mask[resized_mask == 255] = 1
 
@@ -207,7 +236,11 @@ while True:
         check[binary_mask == 1] = 0
         z0 = np.median(check[check != 0])
         #print(z0)
+        check = display_colored_depth(check)
         cv2.imshow("depth", check)
+        cv2.imshow("colored_depth", depth_result)
+        blended = cv2.addWeighted(result, 0.6, depth_result, 0.4, 0)
+        cv2.imshow("blended", blended)
 
         # calculate only if perpendicular and all in the mask
         if is_perpendicular(check):
