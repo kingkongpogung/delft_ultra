@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-
-
 import cv2
 # process img
 frame = cv2.imread('image.jpg', cv2.IMREAD_UNCHANGED)# image setting is below using depthai API

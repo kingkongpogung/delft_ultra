@@ -25,6 +25,34 @@ def remove_outliers(array):
     clean_array[not_outliers == 0] = 0
     return clean_array
 
+def is_perpendicular(depth_frame):
+    w = 50
+    x1 = int(depth_frame.shape[1] / 5)
+    y1 = int(depth_frame.shape[0]/ 5)
+    x2 = 4 * x1
+    y2 = 4 * y1
+
+    d1 = np.mean(depth_frame[y1:y1 + w, x1:x1 + w])
+    d2 = np.mean(depth_frame[y1:y1 + w, x2 - w:x2])
+    d3 = np.mean(depth_frame[y2 - w:y2, x1:x1 + w])
+    d4 = np.mean(depth_frame[y2 - w:y2, x1:x1 + w])
+
+    max_val = np.max([d1, d2, d3, d4])
+    min_val = np.min([d1, d2, d3, d4])
+    diff = np.absolute(max_val - min_val)
+
+    # print('d1: ', d1)
+    # print('d2: ', d2)
+    # print('d3: ', d3)
+    # print('d4: ', d4)
+    print('diff: ', diff)
+
+    if diff <= 50:
+        return True
+    else:
+        return False
+
+
 depth = Image.open("image2-depth.png")
 depth = np.array(depth)
 image = cv2.imread("image2.png")
@@ -42,18 +70,19 @@ inv_mask = 1-mask
 # calculate base
 base = np.copy(depth)
 base = zeroing_edge(base, 5)
-base[mask == 1] = 0
 check = remove_outliers(base)
+check[mask == 1] = 0
 z0 = np.median(check[check!=0])
 print(z0)
 
-# calculate zn
-item = np.copy(depth)
-item[mask == 0] = 0
-dz = item[item!=0]-z0
-dz = abs(dz[dz<0]) #mm
-print(np.mean(dz))
-print(np.sum(dz))
+if is_perpendicular(check):
+    # calculate zn
+    item = np.copy(depth)
+    item[mask == 0] = 0
+    dz = item[item!=0]-z0
+    dz = abs(dz[dz<0]) #mm
+    print(np.mean(dz))
+    print(np.sum(dz))
 
 crop = image
 crop = zeroing_edge(crop,30)

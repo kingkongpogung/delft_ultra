@@ -31,9 +31,8 @@ parser.add_argument("-cam", "--cam_input", help="select camera input source for 
                     choices=cam_options)
 parser.add_argument("-nn", "--nn_model", help="select camera input source for inference",
                     #default='segmentation_model/deeplab_v3_plus_mvn2_decoder_256_openvino_2021.2_6shave.blob', type=str)
-                    default='segmentation_model/deeplab2021_2.blob', type=str)
-                    #default='segmentation_model/bisenetv2_celebamaskhq_256x256.blob', type=str)
-                    #default='segmentation_model/bodypix20x240.blob', type=str)
+                    default='segmentation_model/deeplab2021_2new.blob', type=str)
+
 args = parser.parse_args()
 
 cam_source = args.cam_input
