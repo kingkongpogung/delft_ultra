@@ -76,9 +76,34 @@ def create_box(depth_frame):
 
     return depth_frame
 
+def pix_to_mm(frame, segmented_object_pixel, dist):
+   # https: // stackoverflow.com / questions / 2860325 / how - would - you - find - the - height - of - objects - given - an - image
+    right_intrinsic = [[860.0, 0.0, 640.0], [0.0, 860.0, 360.0], [0.0, 0.0, 1.0]]
+    focal_length = right_intrinsic[0][0]
+
+    fx = right_intrinsic[0][1]
+    fy = right_intrinsic[1][1]
+    f_xy = np.mean([fx, fy])
+
+    m = f_xy/focal_length
+
+    h = frame.getHeight()
+    w = frame.getWidth()
+
+
+    segmented_width_pixel = segmented_object_pixel[0]
+
+    pxpermm_in_lower_resolution = w*m/segmented_width_pixel
+    size_of_object_in_image_sensor = segmented_width_pixel / (pxpermm_in_lower_resolution)
+    real_size_width = (dist * size_of_object_in_image_sensor) / focal_length
+
+    one_pix_to_mm = real_size_width/segmented_width_pixel
+
+    return one_pix_to_mm
+
 ## parameter
 #img_width, img_height = [720, 480]
-img_width, img_height = [1280, 1080]
+#img_width, img_height = [1280, 1080]
 
 # depth paramter
 right_intrinsic = [[860.0, 0.0, 640.0], [0.0, 860.0, 360.0], [0.0, 0.0, 1.0]]
@@ -190,6 +215,17 @@ while True:
         disparity = in_depth.getFrame()
         with np.errstate(divide='ignore'):  # Should be safe to ignore div by zero here
             depth = (disp_levels * baseline * focal / disparity).astype(np.uint16)
+
+            if s_extended:
+                # The number of pixels
+                num_rows, num_cols = depth.shape[:2]
+                # Creating a translation matrix
+                tx = 55
+                ty = 0
+                translation_matrix = np.float32([[1, 0, tx], [0, 1, ty]])
+                # Image translation
+                depth = cv2.warpAffine(depth, translation_matrix, (num_cols, num_rows))
+
             colored_depth = display_colored_depth(depth)
             colored_depth = create_box(colored_depth)
 
@@ -237,9 +273,10 @@ while True:
         z0 = np.median(check[check != 0])
         #print(z0)
         check = display_colored_depth(check)
+
         cv2.imshow("depth", check)
         cv2.imshow("colored_depth", depth_result)
-        blended = cv2.addWeighted(result, 0.6, depth_result, 0.4, 0)
+        blended = cv2.addWeighted(result, 0.6, depth_result, 0.6, 0)
         cv2.imshow("blended", blended)
 
         # calculate only if perpendicular and all in the mask
