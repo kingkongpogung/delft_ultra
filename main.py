@@ -2,7 +2,7 @@
 import cv2
 import numpy as np
 import depthai as dai
-from PIL import Image
+#from PIL import Image
 import imutils
 
 
@@ -218,9 +218,14 @@ while True:
         frame = None
 
     if in_depth is not None:
-        disparity = in_depth.getFrame()
+        in_d = in_depth.getFrame()
+        # Normalization for better visualization
+        disparity = (in_d * (255 / stereo.getMaxDisparity())).astype(np.uint8)
+        dis = cv2.medianBlur(disparity, 3)
+
+        cv2.imshow("disparity", frame)
         with np.errstate(divide='ignore'):  # Should be safe to ignore div by zero here
-            depth = (disp_levels * baseline * focal / disparity).astype(np.uint16)
+            depth = (disp_levels * baseline * focal / dis).astype(np.uint16)
 
             if s_extended:
                 # The number of pixels
