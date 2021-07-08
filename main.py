@@ -66,18 +66,24 @@ def create_box(depth_frame):
     x2 = 4 * x1
     y2 = 4 * y1
 
-    depth_frame = cv2.rectangle(depth_frame, (x1,y1), (x2,y2), color, thickness)
+    #depth_frame = cv2.rectangle(depth_frame, (x1,y1), (x2,y2), color, thickness)
 
-    depth_frame = cv2.rectangle(depth_frame, (x1,y1), (x1+w,y1+w), color, thickness)
-    depth_frame = cv2.rectangle(depth_frame, (x2,y2), (x2-w,y2-w), color, thickness)
+    #depth_frame = cv2.rectangle(depth_frame, (x1,y1), (x1+w,y1+w), color, thickness)
+    #depth_frame = cv2.rectangle(depth_frame, (x2,y2), (x2-w,y2-w), color, thickness)
 
-    depth_frame = cv2.rectangle(depth_frame, (x2,y1), (x2-w,y1+w), color, thickness)
-    depth_frame = cv2.rectangle(depth_frame, (x1,y2), (x1+w,y2-w), color, thickness)
+    #depth_frame = cv2.rectangle(depth_frame, (x2,y1), (x2-w,y1+w), color, thickness)
+    #depth_frame = cv2.rectangle(depth_frame, (x1,y2), (x1+w,y2-w), color, thickness)
+
+    depth_frame = cv2.rectangle(depth_frame, (x1, y1), (x1+50, y1), color, thickness)
+
+    depth_frame = cv2.rectangle(depth_frame, (x1, y1+50), (x1+75, y1+50), color, thickness)
+
+    depth_frame = cv2.rectangle(depth_frame, (x1, y1+100), (x1+100, y1+100), color, thickness)
 
     return depth_frame
 
 def pix_to_mm(frame, segmented_object_pixel, dist):
-   # https: // stackoverflow.com / questions / 2860325 / how - would - you - find - the - height - of - objects - given - an - image
+    # https: // stackoverflow.com / questions / 2860325 / how - would - you - find - the - height - of - objects - given - an - image
     right_intrinsic = [[860.0, 0.0, 640.0], [0.0, 860.0, 360.0], [0.0, 0.0, 1.0]]
     focal_length = right_intrinsic[0][0]
 
