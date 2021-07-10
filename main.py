@@ -5,6 +5,11 @@ import depthai as dai
 from PIL import Image
 import imutils
 
+class_segmentation = ['apple_pie', 'baklava', 'cheesecake', 'chicken_wings',
+                 'chocolate_cake', 'creme_brulee', 'cup_cakes', 'deviled_eggs',
+                 'french_fries', 'fried_rice', 'garlic_bread', 'grilled_salmon',
+                 'omelette', 'onion_rings', 'oysters', 'pizza', 'risotto', 'sashimi',
+                 'steak', 'tuna_tartare']
 
 def nothing(x):
     pass
@@ -227,8 +232,23 @@ while True:
         #lay12 = -1*np.resize(lay1, (nnshape_height , nnshape_width))
         output_colors = decode_deeplabv3p(lay1)
 
+        classes = np.unique(lay1)
+
         if frame is not None:
             frame = show_deeplabv3p(output_colors, frame)
+
+            # PRAIDI: put text on
+            if len(classes) != 1:
+                # print(classes)
+                for cls in classes[1:]:
+                    mask = np.array((np.squeeze(lay1) == cls) * 255, dtype=np.uint8)
+                    # calculate moments of binary image
+                    M = cv2.moments(mask)
+                    # calculate x,y coordinate of center
+                    cX = int(M["m10"] / M["m00"])
+                    cY = int(M["m01"] / M["m00"])
+                    cv2.putText(frame, class_segmentation[cls-1], (cX, cY), cv2.FONT_HERSHEY_TRIPLEX, 0.3,
+                            (0, 0, 0))
             cv2.imshow("nn_input", frame)
 
 
@@ -259,12 +279,11 @@ while True:
     #     cv2.imshow("filtered", result)
     #     cv2.imshow("mask", mask)
 
-    classes = np.unique(lay1)
     if frame is not None and colored_depth is not None and in_nn is not None and len(classes) != 1:
         # PRIADI: mask per class
         for cls in classes[1:]:
             mask = np.array((np.squeeze(lay1) == cls) * 255, dtype=np.uint8)
-            cv2.imshow("mask", mask)
+            # cv2.imshow("mask", mask)
 
             resized_mask = cv2.resize(mask, (depth.shape[1],depth.shape[0]), interpolation = cv2.INTER_AREA)
 
