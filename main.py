@@ -247,8 +247,8 @@ while True:
                     # calculate x,y coordinate of center
                     cX = int(M["m10"] / M["m00"])
                     cY = int(M["m01"] / M["m00"])
-                    cv2.putText(frame, class_segmentation[cls-1], (cX, cY), cv2.FONT_HERSHEY_TRIPLEX, 0.3,
-                            (0, 0, 0))
+                    cv2.putText(frame, class_segmentation[cls-1], (cX, cY), cv2.FONT_HERSHEY_TRIPLEX, 0.4,
+                            (255, 255, 255))
             cv2.imshow("nn_input", frame)
 
 
