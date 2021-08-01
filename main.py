@@ -98,7 +98,6 @@ def pix_to_mm(frame, segmented_object_pixel, dist):
     h = frame.getHeight()
     w = frame.getWidth()
 
-
     segmented_width_pixel = segmented_object_pixel[0]
 
     pxpermm_in_lower_resolution = w*m/segmented_width_pixel
@@ -110,8 +109,13 @@ def pix_to_mm(frame, segmented_object_pixel, dist):
     return one_pix_to_mm
 
 
-def decode_deeplabv3p(output_tensor):
+# comment out function below if prior function is preferred
+def pix_to_mm(distanceToTable):
+    A = 0.0078
+    B = 1.26
+    return distanceToTable*A+B
 
+def decode_deeplabv3p(output_tensor):
     # output = output_tensor.reshape(nnshape_height, nnshape_width)
     output = output_tensor.reshape(nn_shape, nn_shape)
     output_colors = np.take(class_colors, output, axis=0)
@@ -238,20 +242,20 @@ d_frame = device.getOutputQueue("disparity", maxSize=8, blocking=False) # alfian
 q_nn = device.getOutputQueue(name="nn", maxSize=4, blocking=False)
 
 # # create track bar
-cv2.namedWindow("filtering..")
-cv2.createTrackbar("L - H", "filtering..", 0, 255, nothing)
-cv2.createTrackbar("L - S", "filtering..", 0, 255, nothing)
-cv2.createTrackbar("L - V", "filtering..", 0, 255, nothing)
-cv2.createTrackbar("U - H", "filtering..", 255, 255, nothing)
-cv2.createTrackbar("U - S", "filtering..", 255, 255, nothing)
-cv2.createTrackbar("U - V", "filtering..", 255, 255, nothing)
+# cv2.namedWindow("filtering..")
+# cv2.createTrackbar("L - H", "filtering..", 0, 255, nothing)
+# cv2.createTrackbar("L - S", "filtering..", 0, 255, nothing)
+# cv2.createTrackbar("L - V", "filtering..", 0, 255, nothing)
+# cv2.createTrackbar("U - H", "filtering..", 255, 255, nothing)
+# cv2.createTrackbar("U - S", "filtering..", 255, 255, nothing)
+# cv2.createTrackbar("U - V", "filtering..", 255, 255, nothing)
 
 layer_info_printed = False
 while True:
     in_frame = q_frame.get()
     in_depth = d_frame.get()
     in_nn = q_nn.get()
-
+    # frame is for visualization segmentation, volume number, not any calculation
     if in_frame is not None:
         shape = (3, in_frame.getHeight(), in_frame.getWidth())
         frame = in_frame.getData().reshape(shape).transpose(1, 2, 0).astype(np.uint8) # in_frame.getCvFrame() #
@@ -265,7 +269,7 @@ while True:
         disparity = (in_d * (255 / stereo.getMaxDisparity())).astype(np.uint8)
         dis = cv2.medianBlur(disparity, 3)
 
-        cv2.imshow("disparity", frame)
+        #cv2.imshow("disparity", frame)
         with np.errstate(divide='ignore'):  # Should be safe to ignore div by zero here
             depth = (disp_levels * baseline * focal / dis).astype(np.uint16)
 
@@ -324,59 +328,64 @@ while True:
                             (255, 255, 255))
             cv2.imshow("nn_input", frame)
 
-            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            l_h = cv2.getTrackbarPos("L - H", "filtering..")
-            l_s = cv2.getTrackbarPos("L - S", "filtering..")
-            l_v = cv2.getTrackbarPos("L - V", "filtering..")
-            u_h = cv2.getTrackbarPos("U - H", "filtering..")
-            u_s = cv2.getTrackbarPos("U - S", "filtering..")
-            u_v = cv2.getTrackbarPos("U - V", "filtering..")
-            colorLower = np.array([l_h, l_s, l_v])
-            colorUpper = np.array([u_h, u_s, u_v])
-            mask = cv2.inRange(hsv, colorLower, colorUpper)
-            mask = cv2.erode(mask, None, iterations=2)
-            mask = cv2.dilate(mask, None, iterations=2)
-            # only to show contour
-            cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,
-                                    cv2.CHAIN_APPROX_SIMPLE)  # cv.RETR_TREE,
-            cnts = imutils.grab_contours(cnts)
-            result = cv2.bitwise_and(frame, frame, mask=mask)
-            if len(cnts) > 0:
-                c = max(cnts, key=cv2.contourArea)
-                cv2.drawContours(result, [c], -1, (0, 255, 0), 2)
-
-            cv2.imshow("filtered", result)
-            cv2.imshow("mask", mask)
+    # if frame is not None:
+    #     cv2.imshow("nn_input,", frame)
+    #     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    #     l_h = cv2.getTrackbarPos("L - H", "filtering..")
+    #     l_s = cv2.getTrackbarPos("L - S", "filtering..")
+    #     l_v = cv2.getTrackbarPos("L - V", "filtering..")
+    #     u_h = cv2.getTrackbarPos("U - H", "filtering..")
+    #     u_s = cv2.getTrackbarPos("U - S", "filtering..")
+    #     u_v = cv2.getTrackbarPos("U - V", "filtering..")
+    #     colorLower = np.array([l_h, l_s, l_v])
+    #     colorUpper = np.array([u_h, u_s, u_v])
+    #     mask = cv2.inRange(hsv, colorLower, colorUpper)
+    #     mask = cv2.erode(mask, None, iterations=2)
+    #     mask = cv2.dilate(mask, None, iterations=2)
+    #     # only to show contour
+    #     cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,
+    #                             cv2.CHAIN_APPROX_SIMPLE)  # cv.RETR_TREE,
+    #     cnts = imutils.grab_contours(cnts)
+    #     result = cv2.bitwise_and(frame, frame, mask=mask)
+    #     if len(cnts) > 0:
+    #         c = max(cnts, key=cv2.contourArea)
+    #         cv2.drawContours(result, [c], -1, (0, 255, 0), 2)
+    #
+    #     cv2.imshow("filtered", result)
+    #     cv2.imshow("mask", mask)
 
     if frame is not None and colored_depth is not None and in_nn is not None and len(classes) != 1:
         # PRIADI: mask per class
         for cls in classes[1:]:
+            # get mask per class and resize according to depth shape size
             mask = np.array((np.squeeze(lay1) == cls) * 255, dtype=np.uint8)
-            # cv2.imshow("mask", mask)
-
             resized_mask = cv2.resize(mask, (depth.shape[1],depth.shape[0]), interpolation = cv2.INTER_AREA)
 
-            depth_masked = cv2.bitwise_and(depth, depth, mask=resized_mask)
-            depth_result = cv2.bitwise_and(colored_depth, colored_depth, mask=resized_mask)
-            # cv2.imshow("depth_0", depth_result)
+            # visualize depth with segmentation
+            depth_result = cv2.bitwise_and(colored_depth, colored_depth, mask=resized_mask)  # visual only
+            cv2.imshow("colored_depth", cv2.resize(depth_result, (748, 480)))
+
+            # change mask to 1 instead of 255
             binary_mask = np.copy(resized_mask)
             binary_mask[resized_mask == 255] = 1
 
-            # add calculation
+            # calculate base/table distance
             base = np.copy(depth)
-            base = zeroing_edge(base, 5)
-            check = remove_outliers(base)
-            check[binary_mask == 1] = 0
-            z0 = np.median(check[check != 0])
-            check = display_colored_depth(check)
+            base = zeroing_edge(base, 5)  # ignore margin
+            check = remove_outliers(base)  # remove outliers
+            check[binary_mask == 1] = 0  # remove the real item
+            z0 = np.median(check[check != 0])  # distance of base/table
+            dx = pix_to_mm(z0)  # pixel width in mm
 
-            cv2.imshow("depth", check)
-            cv2.imshow("colored_depth", depth_result)
-            blended = cv2.addWeighted(result, 0.6, depth_result, 0.6, 0)
-            cv2.imshow("blended", blended)
+
+            # visualize depth of base/table
+            check_colored = display_colored_depth(check)
+            cv2.imshow("depth", cv2.resize(check_colored, (748, 480)))
+            # blended = cv2.addWeighted(result, 0.6, depth_result, 0.6, 0)
+            # cv2.imshow("blended", blended)
             # cv2.imshow("depth", check)
 
-            # calculate only if perpendicular and all in the mask
+            # calculate only if base/table is perpendicular and all in the mask
             if is_perpendicular(check):
                 # calculate zn
                 item = np.copy(depth)
@@ -384,8 +393,9 @@ while True:
                 item[binary_mask == 0] = 0
                 dz = item[item != 0] - z0
                 dz = abs(dz[dz < 0])  # mm
-                print("height : ",np.mean(dz))
-
+                print("height : ", np.mean(dz))
+                print("volume : ", np.sum(dz))
+                print(dx)
 
     if cv2.waitKey(1) == ord('q'):
         break
